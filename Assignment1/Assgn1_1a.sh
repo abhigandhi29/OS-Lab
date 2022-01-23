@@ -1,0 +1,1 @@
+b=2;i=$1;while [[ $i -ne 1 ]];do [[ $((i%b)) -eq 0 ]]&&i=$((i/b))&&echo -n "$b "||b=$((b+1));done

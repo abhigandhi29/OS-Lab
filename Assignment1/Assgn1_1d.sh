@@ -1,0 +1,1 @@
+for file in ./temp/*;do nl $file|awk '{for(i=1;i<=NF-1;i++)printf$i",";printf$NF;print""}'>./files_mod/${file##*/};done

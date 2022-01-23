@@ -1,0 +1,1 @@
+for i in {1..150};do shuf -i0-$((10+$RANDOM)) -n10|paste -sd,|cat>>$1;done;if cut -d, -f$2 $1|grep $3>/dev/null;then echo "YES";else echo "NO";fi

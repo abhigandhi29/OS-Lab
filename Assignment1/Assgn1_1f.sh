@@ -1,0 +1,1 @@
+cut -d' ' -f$2 $1|tr '[:upper:]' '[:lower:]'|sort -n|uniq -c|sort -rnk1,1|awk '{print$2"\t"$1}'>1e_output_$2_column.freq
