@@ -5,18 +5,22 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <string.h>
+#include <termios.h>
 
 #define SHELL_BUFSIZE 1024
 #define SHELL_TOK_BUFSIZE 64
 #define SHELL_TOK_DELIM " \t\r\n\a"
 #define SHELL_PIPE_DELIM "|"
+#define MAX_HIST 10000
 
 int execute(char **args, int position);
 char ** shell_split_line(char * line, int *position);
 char ** shell_split_pipe(char * line, int *size);
 char* shell_read_line();
 void shell_loop();
+int show_history(char **args);
 int shell_cd(char **args);
 int shell_exit(char **args);
 int shell_help(char **args);
@@ -24,19 +28,43 @@ int shell_launch(char **args, int position, int in, int out);
 int max(int a,int b);
 pid_t child_pid;
 
+struct termios saved_attributes;
+
+void reset_input_mode(void) {
+  tcsetattr(STDIN_FILENO, TCSANOW, &saved_attributes);
+}
+void set_input_mode(void){
+  struct termios tattr;
+  tcgetattr(STDIN_FILENO, &saved_attributes);
+  atexit(reset_input_mode);
+  tcgetattr (STDIN_FILENO, &tattr);
+  tattr.c_lflag &= ~(ICANON|ECHO);
+  tattr.c_cc[VMIN] = 1;
+  tattr.c_cc[VTIME] = 0;
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &tattr);
+}
+
+struct History{
+    int cnt;
+    char** data;
+};
+
+struct History history;
 
 char *built_in[] = 
 {
     "cd",
     "exit",
-    "help"
+    "help",
+    "history"
 };
 
 int (*built_in_func[]) (char **) = 
 {
     &shell_cd,
     &shell_exit,
-    &shell_help
+    &shell_help,
+    &show_history,
 };
 
 int shell_num_builtins()
@@ -44,16 +72,33 @@ int shell_num_builtins()
     return sizeof(built_in) / sizeof(char *);
 }
 
-
-
-
-
-
+void init_history(){
+    FILE* hist_ip;
+    if(hist_ip = fopen("shell_history.txt","r")){
+        fscanf(hist_ip,"%d",&(history.cnt));
+        history.data=(char**)calloc(history.cnt+MAX_HIST,sizeof(char*));
+        for(int i=0;i<history.cnt+10000;i++){
+            history.data[i]=(char*)calloc(100,sizeof(char));
+        }
+        for(int i=0;i<history.cnt;i++){
+            fgets(history.data[i],100,hist_ip);
+        }
+        fclose(hist_ip);
+    }
+    else{
+        history.cnt=0;
+        history.data=(char**)calloc(MAX_HIST,sizeof(char*));
+        for(int i=0;i<history.cnt+10000;i++){
+            history.data[i]=(char*)calloc(100,sizeof(char));
+        }
+    }
+}
 
 int main(int argc, char **argv)
 {
 
     // Command loop
+    init_history();
     signal(SIGTSTP, SIG_IGN);
     signal(SIGINT, SIG_IGN);
     shell_loop();
@@ -137,14 +182,16 @@ char * memory_failed_error()
 char* shell_read_line()
 {
     int bufsize = SHELL_BUFSIZE;
-    int position = 0;
-    char *buffer = malloc(sizeof(char) * bufsize);
+    int position = 0,word_pos=0;
+    char *buffer = calloc(bufsize, sizeof(char) );
+    char *word_buf = calloc(bufsize, sizeof(char));
     int c;
     
     if (!buffer)
     {
         memory_failed_error();
     }
+    set_input_mode();
     while(1)
     {
         c = getchar();
@@ -152,14 +199,130 @@ char* shell_read_line()
         if (c==EOF || c=='\n')
         {
             //printf("%d",position);
+            printf("\n");
             buffer[position] = '\0';
+            reset_input_mode();
             return buffer;
-        } 
+        }
+        else if(c=='\033'){     //Arrow
+            // printf("ARROW");
+            c=getchar();
+            c=getchar();
+            //A for up, B for down, C for right, D for left
+            // printf("%c",c);
+        }
+        else if(c=='\t'){
+            // printf("%d",position);
+            //tab completion
+            reset_input_mode();
+
+            //getting the last word
+            int word_pos=0,tmp=position-1;
+            memset(word_buf,'\0',bufsize);
+            while(tmp>=0&&buffer[tmp]!=' '){
+                tmp--;
+            }
+            if(tmp) tmp++;
+            for(;word_pos+tmp<position;word_pos++){
+                word_buf[word_pos]=buffer[word_pos+tmp];
+            }
+            // printf("%d",word_pos);
+
+            //storing the names of all the files matching initially with the last word
+            char **file_name;
+            file_name=(char **)malloc(1000*sizeof(char*));
+            for(int i=0;i<1000;i++){
+                file_name[i]=(char *)calloc(100,sizeof(char));
+            }
+            //iterating over all the files in the directory
+            DIR *d;
+            struct dirent *dir;
+            d = opendir(".");
+            int file_count=0;
+            if (d)
+            {
+                while ((dir = readdir(d)) != NULL)
+                {
+                    if(strncmp(word_buf,dir->d_name,word_pos)==0){
+                        strcpy(file_name[file_count],dir->d_name);
+                        file_count++;
+                    }
+                }
+                closedir(d);
+            }
+
+
+            // checking if there were any matches
+            if(file_count==0){
+                set_input_mode();
+                continue;
+            }
+            
+            //finding the longest common substring
+            int lcs=(int)1e8;
+            for(int i=1;i<file_count;i++){
+                int tmp=word_pos;
+                while(file_name[0][tmp]==file_name[i][tmp]){
+                    tmp++;
+                }
+                lcs=(lcs<tmp)?lcs:tmp;
+            }
+            if(file_count==1){
+                int word_length=strlen(file_name[0]);
+                // position++;word_pos++;
+                for(;word_pos<word_length;word_pos++,position++){
+                    buffer[position]=file_name[0][word_pos];
+                    printf("%c",file_name[0][word_pos]);
+                    // printf("%c",buffer[position]);
+                }
+            }   
+            else if(lcs>word_pos&&lcs!=1e8){
+                // position++;word_pos++;
+                for(;word_pos<lcs;word_pos++,position++){
+                    buffer[position]=file_name[0][word_pos];
+                    printf("%c",file_name[0][word_pos]);
+                    // printf("%c",buffer[position]);
+                }
+            }
+            else{
+                printf("\n");
+                for(int i=0;i<file_count;i++){
+                    printf("%d) %s\n",i+1,file_name[i]);
+                }
+                int filename_input_num;
+                scanf("%d",&filename_input_num);
+                filename_input_num--;
+                if(filename_input_num<0||filename_input_num>file_count){
+                    printf("Incorrect Input\n");
+                    set_input_mode();
+                    return NULL;
+                }
+                int word_length=strlen(file_name[filename_input_num]);
+                // position++;word_pos++;
+                for(;word_pos<word_length;word_pos++,position++){
+                    buffer[position]=file_name[filename_input_num][word_pos];
+                    // printf("%c",buffer[position]);
+                }
+                printf("--> %s",buffer);
+                c=getchar();
+            }
+            
+            set_input_mode();
+            continue;
+
+        }
+        else if(c==127){
+            if(position<=0)
+            continue;
+            printf("\b \b");
+            position--;
+        }
         else
         {
             buffer[position] = c;
+            printf("%c",c);
+            position++;
         }
-        position++;
         
         // handle buffer limit extension
         if (position >= bufsize)
@@ -407,5 +570,19 @@ int shell_help(char **args)
 
 int shell_exit(char **args)
 {
+    return 0;
+}
+
+int show_history(char **args){
+    if(history.cnt<1000){
+        for(int i=history.cnt-1;i>=0;i--){
+            printf("%s\n",history.data[i]);
+        }
+    }
+    else{
+        for(int i=1;i<=1000;i++){
+            printf("%s\n",history.data[history.cnt-i]);
+        }
+    }
     return 0;
 }
