@@ -17,8 +17,9 @@
 #define SHELL_TOK_DELIM " \t\r\n\a"
 #define SHELL_PIPE_DELIM "|"
 #define MAX_HIST 10000
-#define MAX_SHOW_HIST 5
-#define MAX_CAMMAND 128
+#define MAX_SHOW_HIST 1000
+#define MAX_COMMAND 128
+#define INF 100000000
 #define EVENT_SIZE  ( sizeof (struct inotify_event) )
 #define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
 #define BUF_LEN 128
@@ -37,7 +38,7 @@ int shell_exit(char **args);
 int shell_help(char **args);
 int shell_launch(char **args, int position, int in, int out, int wait);
 int shell_multiWatch(char *line);
-void search();
+void search(char *cmd);
 
 struct termios saved_attributes;
 
@@ -89,41 +90,60 @@ int shell_num_builtins()
 void init_history(){
     history.start=0;
     FILE* hist_ip;
+    int tmp;
     if(hist_ip = fopen("shell_history.txt","r")){
         fscanf(hist_ip,"%d",&(history.cnt));
+        fgetc(hist_ip);
         history.data=(char**)calloc(MAX_HIST,sizeof(char*));
         for(int i=0;i<MAX_HIST;i++){
-            history.data[i]=(char*)calloc(100,sizeof(char));
+            history.data[i]=(char*)calloc(MAX_COMMAND,sizeof(char));
         }
         for(int i=0;i<history.cnt;i++){
-            fgets(history.data[i],100,hist_ip);
+            int j=0;
+            while (1)
+            {
+                history.data[i][j] = (char) fgetc(hist_ip);
+                if(history.data[i][j]==EOF){
+                    history.data[i][j]='\0';
+                    break;
+                }
+                if(history.data[i][j]=='\n'){
+                    history.data[i][j]='\0';
+                    if(j==0)
+                    i--;
+                    break;
+                }
+                j++;
+            }
+            printf("%d",j);
+            
         }
         fclose(hist_ip);
     }
     else{
         history.cnt=0;
         history.data=(char**)calloc(MAX_HIST,sizeof(char*));
-        for(int i=0;i<history.cnt+10000;i++){
-            history.data[i]=(char*)calloc(100,sizeof(char));
+        for(int i=0;i<MAX_HIST;i++){
+            history.data[i]=(char*)calloc(MAX_COMMAND,sizeof(char));
         }
     }
 }
 
 void update_history(){
     FILE* hist_op = fopen("shell_history.txt","w");
-    if(history.cnt==10000){
-        fprintf(hist_op,"%d\n",10000);
+    if(history.cnt==MAX_HIST){
+        fprintf(hist_op,"%d",MAX_HIST);
         for(int i=history.start;i<history.cnt;i++){
-            fprintf(hist_op,"%s\n",history.data[i]);
+            fprintf(hist_op,"\n%s",history.data[i]);
         }
         for(int i=0;i<history.start;i++){
-            fprintf(hist_op,"%s\n",history.data[i]);
+            fprintf(hist_op,"\n%s",history.data[i]);
         }
     }
     else{
-        fprintf(hist_op,"%d\n",history.cnt);
+        fprintf(hist_op,"%d",history.cnt);
         for(int i=history.start;i<history.cnt;i++){
-            fprintf(hist_op,"%s\n",history.data[i]);
+            fprintf(hist_op,"\n%s",history.data[i]);
         }
     }
     fclose(hist_op);
@@ -159,7 +179,7 @@ int KMPSearch(char *pat, char *txt) {
     if (pat[j] == txt[i]) {
       j++;
       i++;
-      maximum = max(j, maximum);
+      maximum = (j>maximum)?j:maximum;
     }
     if (j == M) {
       return M;
@@ -174,11 +194,8 @@ int KMPSearch(char *pat, char *txt) {
   return maximum;
 }
 
-void search() {
-    size_t line_size = 1024;
-    char *cmd = (char *)malloc(sizeof(char) * line_size);
-    cmd = shell_read_line();
-    
+void search(char* cmd) {
+    size_t line_size = 1024;    
     int maximum = 0, maxIdx = -1;
 
     
@@ -533,7 +550,7 @@ char* shell_read_line()
             }
             
             //finding the longest common substring
-            int lcs=(int)1e8;
+            int lcs=INF;
             for(int i=1;i<file_count;i++){
                 int tmp=word_pos;
                 while(file_name[0][tmp]==file_name[i][tmp]){
@@ -550,7 +567,7 @@ char* shell_read_line()
                     // printf("%c",buffer[position]);
                 }
             }   
-            else if(lcs>word_pos&&lcs!=1e8){
+            else if(lcs>word_pos&&lcs!=INF){
                 // position++;word_pos++;
                 for(;word_pos<lcs;word_pos++,position++){
                     buffer[position]=file_name[0][word_pos];
@@ -585,11 +602,20 @@ char* shell_read_line()
             continue;
 
         }
-        else if(c==127){
+        else if(c==127){    //for backspace
             if(position<=0)
             continue;
             printf("\b \b");
             position--;
+        }
+        else if(c==18){ //Search function if ctrl+r is pressed
+            reset_input_mode();
+            printf("Enter search term: ");
+            char search_term[100];
+            scanf("%s",search_term);
+            search(search_term);
+            set_input_mode();
+
         }
         else
         {
@@ -626,43 +652,6 @@ char** shell_split_line(char* line, int *position)
     token = strtok(line, SHELL_TOK_DELIM);
     while (token != NULL)
     {
-        //Trying to manually tokenise the '<' without spaces as bash accepts those
-        /*int l = strlen(token);
-        int last=0;
-        int i;
-        int j=0;
-        int flag=0;
-        for(i=0;i<l;++i)
-        {
-            if(token[i]=='<'||token[i]=='>')
-            {
-                flag=1;
-                if(i!=0)
-                {
-                    tokens[*position] = (char*)malloc(sizeof(char)*l);
-                    strncpy(tokens[*position],token+last,i-last);
-                    (*position)++;
-                }
-                tokens[*position] = (char*)malloc(1);
-                tokens[*position][0] = token[i];
-                (*position)++;
-                last = i+1;
-            }
-        }
-        
-        if(flag==1) 
-        {
-            token = strtok(NULL, SHELL_TOK_DELIM);
-            if(last<l)
-            {
-                tokens[*position] = (char*)malloc(sizeof(char)*l);
-                strncpy(tokens[*position],token+last,l-last);
-                (*position)++;
-            }
-            continue;
-        }
-    */
-
         tokens[*position] = token;
         (*position)++;
         
@@ -880,14 +869,13 @@ int show_history(char **args){
 
         }
     }
-    printf("History Print Completed\n");
 }
 
 int clear_history(char **args){
     history.start=0;
     history.cnt=0;
     for(int i=0;i<MAX_HIST;i++){
-        memset(history.data[i],'\0',100);
+        memset(history.data[i],'\0',MAX_COMMAND);
     }
     
 
