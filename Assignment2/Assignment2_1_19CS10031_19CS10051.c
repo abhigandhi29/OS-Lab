@@ -1,3 +1,11 @@
+/**********************
+ * Operating Systems Lab
+ * Assignment 2
+ * Use of Syscall
+ * Abhishek Gandhi - 19CS10031
+ * Sajal Chammuniya - 19CS10051
+ ********************/
+
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -117,7 +125,7 @@ void init_history(){
                 }
                 j++;
             }
-            printf("%d",j);
+            //printf("%d",j);
             
         }
         fclose(hist_ip);
