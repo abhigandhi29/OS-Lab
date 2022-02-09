@@ -37,7 +37,7 @@ int shell_exit(char **args);
 int shell_help(char **args);
 int shell_launch(char **args, int position, int in, int out, int wait);
 int shell_multiWatch(char *line);
-int max(int a,int b);
+void search();
 
 struct termios saved_attributes;
 
@@ -128,8 +128,89 @@ void update_history(){
     }
     fclose(hist_op);
 }
-char * memory_failed_error()
-{
+
+void computeLPSArray(char *pat, int M, int *lps) {
+  int len = 0;
+  lps[0] = 0;
+  int i = 1;
+  while (i < M) {
+    if (pat[i] == pat[len]) {
+      len++;
+      lps[i] = len;
+      i++;
+    } else {
+      if (len != 0) {
+        len = lps[len - 1];
+      } else {
+        lps[i] = 0;
+        i++;
+      }
+    }
+  }
+}
+int KMPSearch(char *pat, char *txt) {
+  int M = strlen(pat);
+  int N = strlen(txt);
+  int lps[M];
+  computeLPSArray(pat, M, lps);
+  int maximum = 0;
+  int i = 0, j = 0;
+  while (i < N) {
+    if (pat[j] == txt[i]) {
+      j++;
+      i++;
+      maximum = max(j, maximum);
+    }
+    if (j == M) {
+      return M;
+
+    } else if (i < N && pat[j] != txt[i]) {
+      if (j != 0)
+        j = lps[j - 1];
+      else
+        i = i + 1;
+    }
+  }
+  return maximum;
+}
+
+void search() {
+    size_t line_size = 1024;
+    char *cmd = (char *)malloc(sizeof(char) * line_size);
+    cmd = shell_read_line();
+    
+    int maximum = 0, maxIdx = -1;
+
+    
+    for(int j=history.start-1;j>=0;j--){
+        for (int i = 0; i < (int)strlen(cmd); i++) {
+            char *cmdsubstring = cmd + i;
+            int len = KMPSearch(cmdsubstring, history.data[j]);
+            if (len > maximum) {
+                maximum = len;
+                maxIdx = j;
+            }
+        }
+    }
+    for(int j=history.cnt;j>=history.start;j--){
+        for (int i = 0; i < (int)strlen(cmd); i++) {
+            char *cmdsubstring = cmd + i;
+            int len = KMPSearch(cmdsubstring, history.data[j]);
+            if (len > maximum) {
+                maximum = len;
+                maxIdx = j;
+            }
+        }
+    }
+
+    if (maximum==0 || maximum==1) {
+        fprintf(stdout, "No match for search term in history\n");
+    } else {
+        fprintf(stdout, "%s", history.data[maxIdx]);
+    }
+}
+
+char * error_in_memory(){
     fprintf(stderr, "Shell: failed to allocate memory for line\n");
     exit(EXIT_FAILURE);
 }
@@ -159,7 +240,7 @@ int shell_multiWatch(char *line){
     cammands = (char**)malloc(sizeof(char *)*BUF_LEN);
     if (!cammands) 
     {
-        memory_failed_error();
+        error_in_memory();
     }
 
     char *temp;
@@ -382,7 +463,7 @@ char* shell_read_line()
     
     if (!buffer)
     {
-        memory_failed_error();
+        error_in_memory();
     }
     set_input_mode();
     while(1)
@@ -523,7 +604,7 @@ char* shell_read_line()
             bufsize += SHELL_BUFSIZE;
             buffer = realloc(buffer, bufsize);
             if (!buffer){
-                memory_failed_error();
+                error_in_memory();
             }
         }
     }
@@ -539,7 +620,7 @@ char** shell_split_line(char* line, int *position)
 
     if (!tokens) 
     {
-        memory_failed_error();
+        error_in_memory();
     }
 
     token = strtok(line, SHELL_TOK_DELIM);
@@ -591,7 +672,7 @@ char** shell_split_line(char* line, int *position)
             tokens = realloc(tokens, bufsize * sizeof(char *));
             if (!tokens)
             {
-                memory_failed_error();
+                error_in_memory();
             }
         }
         token = strtok(NULL, SHELL_TOK_DELIM);
@@ -610,7 +691,7 @@ char** shell_split_pipe(char* line, int *size)
 
     if (!tokens) 
     {
-        memory_failed_error();
+        error_in_memory();
     }
 
     token = strtok(line, SHELL_PIPE_DELIM);
@@ -625,7 +706,7 @@ char** shell_split_pipe(char* line, int *size)
             tokens = realloc(tokens, bufsize * sizeof(char *));
             if (!tokens)
             {
-                memory_failed_error();
+                error_in_memory();
             }
         }
         token = strtok(NULL, SHELL_PIPE_DELIM);
