@@ -1,32 +1,43 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h> 
+#include<fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <string.h>
 #include <termios.h>
+#include <sys/inotify.h>
+#include <time.h>
+#include <errno.h>
 
 #define SHELL_BUFSIZE 1024
 #define SHELL_TOK_BUFSIZE 64
 #define SHELL_TOK_DELIM " \t\r\n\a"
 #define SHELL_PIPE_DELIM "|"
 #define MAX_HIST 10000
+#define MAX_SHOW_HIST 5
+#define MAX_CAMMAND 128
+#define EVENT_SIZE  ( sizeof (struct inotify_event) )
+#define EVENT_BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
+#define BUF_LEN 128
 
 int execute(char **args, int position);
 char ** shell_split_line(char * line, int *position);
 char ** shell_split_pipe(char * line, int *size);
 char* shell_read_line();
 void shell_loop();
+void init_history();
+void update_history();
 int show_history(char **args);
+int clear_history(char **args);
 int shell_cd(char **args);
 int shell_exit(char **args);
 int shell_help(char **args);
-int shell_launch(char **args, int position, int in, int out);
+int shell_launch(char **args, int position, int in, int out, int wait);
+int shell_multiWatch(char *line);
 int max(int a,int b);
-pid_t child_pid;
 
 struct termios saved_attributes;
 
@@ -46,6 +57,7 @@ void set_input_mode(void){
 
 struct History{
     int cnt;
+    int start;
     char** data;
 };
 
@@ -56,7 +68,8 @@ char *built_in[] =
     "cd",
     "exit",
     "help",
-    "history"
+    "history",
+    "hclear",
 };
 
 int (*built_in_func[]) (char **) = 
@@ -65,6 +78,7 @@ int (*built_in_func[]) (char **) =
     &shell_exit,
     &shell_help,
     &show_history,
+    &clear_history,
 };
 
 int shell_num_builtins()
@@ -73,11 +87,12 @@ int shell_num_builtins()
 }
 
 void init_history(){
+    history.start=0;
     FILE* hist_ip;
     if(hist_ip = fopen("shell_history.txt","r")){
         fscanf(hist_ip,"%d",&(history.cnt));
-        history.data=(char**)calloc(history.cnt+MAX_HIST,sizeof(char*));
-        for(int i=0;i<history.cnt+10000;i++){
+        history.data=(char**)calloc(MAX_HIST,sizeof(char*));
+        for(int i=0;i<MAX_HIST;i++){
             history.data[i]=(char*)calloc(100,sizeof(char));
         }
         for(int i=0;i<history.cnt;i++){
@@ -94,6 +109,182 @@ void init_history(){
     }
 }
 
+void update_history(){
+    FILE* hist_op = fopen("shell_history.txt","w");
+    if(history.cnt==10000){
+        fprintf(hist_op,"%d\n",10000);
+        for(int i=history.start;i<history.cnt;i++){
+            fprintf(hist_op,"%s\n",history.data[i]);
+        }
+        for(int i=0;i<history.start;i++){
+            fprintf(hist_op,"%s\n",history.data[i]);
+        }
+    }
+    else{
+        fprintf(hist_op,"%d\n",history.cnt);
+        for(int i=history.start;i<history.cnt;i++){
+            fprintf(hist_op,"%s\n",history.data[i]);
+        }
+    }
+    fclose(hist_op);
+}
+char * memory_failed_error()
+{
+    fprintf(stderr, "Shell: failed to allocate memory for line\n");
+    exit(EXIT_FAILURE);
+}
+
+int multiWatch_c_detect = 1;
+void multiWatch_ctrl_c(){
+    multiWatch_c_detect = 0;
+    //signal(SIGTSTP, SIG_IGN);
+
+    signal(SIGINT, SIG_IGN);
+    
+
+    int status = 0;
+    int i=1;
+    while(status==0){
+        char * str = malloc(sizeof(char)*BUF_LEN);
+        sprintf(str,".temp.PID%d.txt",i);
+        status = remove(str);
+    }
+}
+
+int shell_multiWatch(char *line){
+
+    //signal(SIGTSTP, multiWatch_ctrl_c);
+    signal(SIGINT, multiWatch_ctrl_c);
+    char **cammands;
+    cammands = (char**)malloc(sizeof(char *)*BUF_LEN);
+    if (!cammands) 
+    {
+        memory_failed_error();
+    }
+
+    char *temp;
+    temp = strtok(line,"\"");
+    temp = strtok(NULL,"\"");
+    int size=0;
+    while(temp!=NULL){
+        cammands[size] = temp;
+        //printf("%s\n",temp);
+        size++;
+        temp = strtok(NULL,"\"");
+        temp = strtok(NULL,"\"");
+        
+    }
+    cammands[size] = NULL;
+    char ***arguments;
+    arguments = (char***)malloc(sizeof(char **)*size+1);
+    int positions[size];
+
+    int fd = inotify_init();
+    int inotify_id[size];
+    int readFds[size];
+    
+    for(int i=0;i<size;i++){
+        //printf("%s\n",cammands[i]);
+        //arguments[i] = cammands[i];
+        char **args;
+        int position = 0;
+        args = shell_split_line(cammands[i], &position);
+        arguments[i] = args;
+        positions[i] = position;
+        
+        char *str;
+        str = malloc(sizeof(char)*BUF_LEN);
+        for(int i=0;i<BUF_LEN;i++)
+            str[i] = '\0';
+        sprintf(str, ".temp.PID%d.txt", i+1);
+        int discriptor = open(str,O_CREAT | O_APPEND, 0666);
+        readFds[i] = discriptor;
+        //close(discriptor);
+        //watchFiles(str,cammands[i]);
+        int wd = inotify_add_watch( fd, str, IN_MODIFY);
+        inotify_id[i] = wd;
+    }
+    pid_t pid_to_console = fork();
+
+    if(pid_to_console==0){
+        //signal(SIGTSTP, SIG_DFL);
+        signal(SIGINT, SIG_DFL);
+        char buf[EVENT_BUF_LEN]
+                    __attribute__((aligned(__alignof__(struct inotify_event))));
+        for(int i=0;i<EVENT_BUF_LEN;i++) buf[i] = '\0';
+        while(1){    
+            int len = read( fd, buf, EVENT_BUF_LEN );
+            if(len<=0) perror("read error");
+            int i=0;
+            while(i<len){
+                struct inotify_event *event = (struct inotify_event *)&buf[i];
+                
+                if(event->mask & IN_MODIFY){
+
+                    int wd = event->wd;
+                    int fileIndex =0;
+                    for(int j=0;j<size;j++){
+                        if(wd==inotify_id[j]){
+                            fileIndex = j;
+                            break;
+                        }
+                    }
+                    time_t t;   // not a primitive datatype
+                    time(&t);
+                    char read_buf[BUF_LEN + 1];
+                    for (int i = 0; i <= BUF_LEN; i++) {
+                        read_buf[i] = '\0';
+                    }
+                    
+                    fprintf(stdout,"\"%s\", %s\n<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-\n",cammands[fileIndex],ctime(&t));
+                    while (read(readFds[fileIndex], read_buf, BUF_LEN) > 0) {
+                        fprintf(stdout, "%s", read_buf);
+                        for (int i = 0; i <= BUF_LEN; i++) {
+                            read_buf[i] = '\0';
+                        }
+                    }
+                    fprintf(stdout, "->->->->->->->->->->->->->->->->->->->->\n\n");
+                }
+                i += sizeof(struct inotify_event) + event->len;
+            }
+        }
+    }
+
+    while(multiWatch_c_detect){
+        for(int i=0;i<size;i++){
+
+            //char **args;
+            //int position = 0;
+            //args = shell_split_line(cammands[i], &position);
+            //arguments[i] = args;
+            //positions[i] = position;
+
+            char *str;
+            str = malloc(sizeof(char)*BUF_LEN);
+            sprintf(str, ".temp.PID%d.txt", i+1);
+            int discriptor = open(str,O_CREAT| O_WRONLY | O_APPEND, 0644);
+            //printf("%d\n",positions[i]);
+            shell_launch(arguments[i],positions[i],0,discriptor,0);
+        }
+        sleep(1);
+
+        
+
+        
+        
+        //char final[EVENT_BUF_LEN+1000];
+        //for(int i=0;i<size;i++)
+        //sprintf(final,"\"%s\", %s\n<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-\n%s\n->->->->->->->->->->->->->->->->->->->\n",cammand,ctime(&t),buffer);
+        //printf("%s",final);
+
+
+    }
+    multiWatch_c_detect=1;
+    
+    return 1;
+}
+
+
 int main(int argc, char **argv)
 {
 
@@ -102,23 +293,22 @@ int main(int argc, char **argv)
     signal(SIGTSTP, SIG_IGN);
     signal(SIGINT, SIG_IGN);
     shell_loop();
+    update_history();
     // shutdown actions
     return EXIT_SUCCESS;
 }
 
-
-
-
 void shell_loop()
 {
     
-    char *line;
+    char *line,*temp;
     size_t line_size = 1024;
     char **args;
     char **pipes;
     int status=1;
     int position, pipe_size;
     line = (char *)(malloc(line_size * sizeof(char)));
+    temp = (char *)(malloc(line_size * sizeof(char)));
     while(status)
     {
         printf("--> ");
@@ -126,28 +316,35 @@ void shell_loop()
         if(line[0] == '\0'){
             continue;
         }
-        // line = readline();
-        // getline(&line, &line_size, stdin);
-        // scanf("%[^\n]s", line);
-        // printf("The command is %s\n", line);
+
+        //Adding the command in history
+        if(history.cnt==MAX_HIST){
+            strcpy(history.data[history.start],line);
+            (history.start)++;
+            history.start%=MAX_HIST;
+        }
+        else{
+            strcpy(history.data[history.cnt],line);
+            history.cnt++;
+        }
+        
+        for(int i=0;i<line_size;i++)
+            temp[i] = line[i];
+        
+
+        if(strcmp(strtok(temp," "),"multiWatch")==0){
+            shell_multiWatch(line);
+            continue;
+        }
+
         pipes = shell_split_pipe(line, &pipe_size);
         if (pipe_size == 1) {
             args = shell_split_line(line, &position);
             int i=0;
-            /*printf("HELLO\n");
-            for(i=0;i<position;++i)
-            {
-                printf("%s\n",args[i]);
-            }
-            */
-            // printf("END\n");
+            
             status = execute(args, position);
         }
         else if (pipe_size > 1) {
-            // printf("%d\n", pipe_size);
-            // for (int j=0; j<pipe_size;j++)
-            //     printf("%s\n", pipes[j]);
-            // printf("BEGIN\n");
             int i;
             pid_t pid;
             // in handles the file descriptor for input
@@ -155,14 +352,14 @@ void shell_loop()
             for (i=0; i<pipe_size - 1; ++i) {
                 pipe(fd);
                 args = shell_split_line(pipes[i], &position);
-                status = shell_launch(args, position, in, fd[1]);
+                status = shell_launch(args, position, in, fd[1], 1);
                 close(fd[1]);
                 in = fd[0];
             }
             // if (in != 0)
             //     dup2 (in, 0);
             args = shell_split_line(pipes[i], &position);
-            status = shell_launch(args, position, in, 1);
+            status = shell_launch(args, position, in, 1, 1);
         }
         // memory cleaning
         free(line);
@@ -173,11 +370,7 @@ void shell_loop()
 
 }
 
-char * memory_failed_error()
-{
-    fprintf(stderr, "Shell: failed to allocate memory for line\n");
-    exit(EXIT_FAILURE);
-}
+
 
 char* shell_read_line()
 {
@@ -441,7 +634,7 @@ char** shell_split_pipe(char* line, int *size)
     return tokens;
 }
 
-int shell_launch(char **args, int position, int in, int out) 
+int shell_launch(char **args, int position, int in, int out, int wait) 
 {
     pid_t pid, wpid;
     int status;
@@ -465,14 +658,16 @@ int shell_launch(char **args, int position, int in, int out)
         signal(SIGINT, SIG_DFL);
         if (in != 0)
         {
+    
           dup2 (in, 0);
           close (in);
         }
 
         if (out != 1)
         {
-          dup2 (out, 1);
-          close (out);
+            
+            dup2 (out, 1);
+            close (out);
         }
     	// Child process
         int count=0;
@@ -493,13 +688,21 @@ int shell_launch(char **args, int position, int in, int out)
             }
         }
 
-        char ** args2 = (char**)malloc(sizeof(char*)*(size-1));
+        char ** args2 = (char**)malloc(sizeof(char*)*(size+1));
+        for(int i=0;i<=size;i++)
+            args2[i] = NULL;
+
         for(i=0;i<size-count;++i) 
         {
             args2[i] = args[i];
         }
-        if (execvp(args2[0], args2) == -1) perror("shell");
 
+        
+        
+        if (execvp(args2[0], args2) == -1){
+
+            perror("shell");
+        }
         exit(EXIT_FAILURE);
     }
     else if (pid < 0) perror("forking error!");
@@ -507,7 +710,7 @@ int shell_launch(char **args, int position, int in, int out)
     {
         // Parent process
         //signal(SIGTSTP, SIG_DFL);
-    	if(!strcmp(args[size-1],"&")==0)
+    	if(!strcmp(args[size-1],"&")==0 && wait)
     	{
     		do 
 	        {
@@ -536,7 +739,7 @@ int execute(char **args, int position)
                 return (*built_in_func[i])(args);
             }
         }
-        return shell_launch(args, position, 0, 1);
+        return shell_launch(args, position, 0, 1, 1);
     }
     
 }
@@ -574,15 +777,37 @@ int shell_exit(char **args)
 }
 
 int show_history(char **args){
-    if(history.cnt<1000){
+    if(history.cnt<MAX_SHOW_HIST){
         for(int i=history.cnt-1;i>=0;i--){
             printf("%s\n",history.data[i]);
         }
+        
     }
     else{
-        for(int i=1;i<=1000;i++){
-            printf("%s\n",history.data[history.cnt-i]);
+        if(history.start>MAX_SHOW_HIST+1){
+            for(int i=history.start-1,j=MAX_SHOW_HIST;j>0;i--,j--){
+            printf("%s\n",history.data[i]);
+            }
+        }
+        else{
+            for(int i=history.start-1;i>=0;i--){
+            printf("%s\n",history.data[i]);
+            }
+            for(int i=history.cnt-1,j=MAX_SHOW_HIST-history.start;j>0;i--,j--){
+            printf("%s\n",history.data[i]);
+            }
+
         }
     }
-    return 0;
+    printf("History Print Completed\n");
+}
+
+int clear_history(char **args){
+    history.start=0;
+    history.cnt=0;
+    for(int i=0;i<MAX_HIST;i++){
+        memset(history.data[i],'\0',100);
+    }
+    
+
 }
