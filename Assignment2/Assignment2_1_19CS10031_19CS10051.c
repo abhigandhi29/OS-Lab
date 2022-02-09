@@ -34,8 +34,8 @@ void update_history();
 int show_history(char **args);
 int clear_history(char **args);
 int shell_cd(char **args);
-int shell_exit(char **args);
-int shell_help(char **args);
+int execute_exit(char **args);
+int execute_help(char **args);
 int shell_launch(char **args, int position, int in, int out, int wait);
 int shell_multiWatch(char *line);
 void search(char *cmd);
@@ -64,6 +64,7 @@ struct History{
 
 struct History history;
 
+//build in cammands
 char *built_in[] = 
 {
     "cd",
@@ -73,11 +74,12 @@ char *built_in[] =
     "hclear",
 };
 
+//build in cammands
 int (*built_in_func[]) (char **) = 
 {
     &shell_cd,
-    &shell_exit,
-    &shell_help,
+    &execute_exit,
+    &execute_help,
     &show_history,
     &clear_history,
 };
@@ -237,6 +239,7 @@ void multiWatch_ctrl_c(){
     multiWatch_c_detect = 0;
     //signal(SIGTSTP, SIG_IGN);
 
+    //ignoring ctrl-c signal
     signal(SIGINT, SIG_IGN);
     
 
@@ -252,6 +255,7 @@ void multiWatch_ctrl_c(){
 int shell_multiWatch(char *line){
 
     //signal(SIGTSTP, multiWatch_ctrl_c);
+    // directing ctrl-c signal 
     signal(SIGINT, multiWatch_ctrl_c);
     char **cammands;
     cammands = (char**)malloc(sizeof(char *)*BUF_LEN);
@@ -264,6 +268,7 @@ int shell_multiWatch(char *line){
     temp = strtok(line,"\"");
     temp = strtok(NULL,"\"");
     int size=0;
+    //extracting cammands
     while(temp!=NULL){
         cammands[size] = temp;
         //printf("%s\n",temp);
@@ -277,7 +282,7 @@ int shell_multiWatch(char *line){
     arguments = (char***)malloc(sizeof(char **)*size+1);
     int positions[size];
 
-    int fd = inotify_init();
+    int fd = inotify_init(); // for watching txt file
     int inotify_id[size];
     int readFds[size];
     
@@ -295,14 +300,14 @@ int shell_multiWatch(char *line){
         for(int i=0;i<BUF_LEN;i++)
             str[i] = '\0';
         sprintf(str, ".temp.PID%d.txt", i+1);
-        int discriptor = open(str,O_CREAT | O_APPEND, 0666);
+        int discriptor = open(str,O_CREAT | O_APPEND, 0666);   //open the files and also create them
         readFds[i] = discriptor;
         //close(discriptor);
         //watchFiles(str,cammands[i]);
         int wd = inotify_add_watch( fd, str, IN_MODIFY);
         inotify_id[i] = wd;
     }
-    pid_t pid_to_console = fork();
+    pid_t pid_to_console = fork(); // child process for watching files
 
     if(pid_to_console==0){
         //signal(SIGTSTP, SIG_DFL);
@@ -351,30 +356,13 @@ int shell_multiWatch(char *line){
     while(multiWatch_c_detect){
         for(int i=0;i<size;i++){
 
-            //char **args;
-            //int position = 0;
-            //args = shell_split_line(cammands[i], &position);
-            //arguments[i] = args;
-            //positions[i] = position;
-
             char *str;
             str = malloc(sizeof(char)*BUF_LEN);
             sprintf(str, ".temp.PID%d.txt", i+1);
             int discriptor = open(str,O_CREAT| O_WRONLY | O_APPEND, 0644);
-            //printf("%d\n",positions[i]);
-            shell_launch(arguments[i],positions[i],0,discriptor,0);
+            shell_launch(arguments[i],positions[i],0,discriptor,0); // call every cammand one by one
         }
-        sleep(1);
-
-        
-
-        
-        
-        //char final[EVENT_BUF_LEN+1000];
-        //for(int i=0;i<size;i++)
-        //sprintf(final,"\"%s\", %s\n<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-<-\n%s\n->->->->->->->->->->->->->->->->->->->\n",cammand,ctime(&t),buffer);
-        //printf("%s",final);
-
+        sleep(1); // sleep for one second 
 
     }
     multiWatch_c_detect=1;
@@ -388,10 +376,10 @@ int main(int argc, char **argv)
 
     // Command loop
     init_history();
-    signal(SIGTSTP, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);   // ignore ctrl-c and ctrl-z
     signal(SIGINT, SIG_IGN);
-    shell_loop();
-    update_history();
+    shell_loop();    // sheel loop for continuously taking input
+    update_history();    // store history in a file
     // shutdown actions
     return EXIT_SUCCESS;
 }
@@ -406,7 +394,7 @@ void shell_loop()
     int status=1;
     int position, pipe_size;
     line = (char *)(malloc(line_size * sizeof(char)));
-    temp = (char *)(malloc(line_size * sizeof(char)));
+    temp = (char *)(malloc(line_size * sizeof(char)));  // temp and line array 
     while(status)
     {
         printf("--> ");
@@ -436,11 +424,11 @@ void shell_loop()
         }
 
         pipes = shell_split_pipe(line, &pipe_size);
-        if (pipe_size == 1) {
+        if (pipe_size == 1) {     // if no pipe is present 
             args = shell_split_line(line, &position);
             int i=0;
             
-            status = execute(args, position);
+            status = execute(args, position);   //simply execute the cammand
         }
         else if (pipe_size > 1) {
             int i;
@@ -448,20 +436,21 @@ void shell_loop()
             // in handles the file descriptor for input
             int in = 0, fd[2];
             for (i=0; i<pipe_size - 1; ++i) {
-                pipe(fd);
-                args = shell_split_line(pipes[i], &position);
+                pipe(fd);     // pipe input and output of every cammand
+                args = shell_split_line(pipes[i], &position);     
                 status = shell_launch(args, position, in, fd[1], 1);
                 close(fd[1]);
                 in = fd[0];
             }
-            // if (in != 0)
-            //     dup2 (in, 0);
+
             args = shell_split_line(pipes[i], &position);
             status = shell_launch(args, position, in, 1, 1);
         }
-        // memory cleaning
+        // free the memory
         free(line);
         free(args);
+        //free(temp);
+        //free(pipes);
         fflush(stdin);
         fflush(stdout);
     } 
@@ -517,7 +506,6 @@ char* shell_read_line()
             for(;word_pos+tmp<position;word_pos++){
                 word_buf[word_pos]=buffer[word_pos+tmp];
             }
-            // printf("%d",word_pos);
 
             //storing the names of all the files matching initially with the last word
             char **file_name;
@@ -710,16 +698,7 @@ int shell_launch(char **args, int position, int in, int out, int wait)
     int status;
     long int size = position;
     int i=0;
-    //Pipe not implemented ;_;_;_;
-    /*
-    int num_pipe=0;
-    for(i=0;i<size;++i) if(strcmp(args[i],"|")==0) num_pipe++;
     
-    for(int i=0;i<num_pipe+1;++i)
-    {
-        char ** args2 = (char**)malloc(sizeof(char*)*(size-1));
-    }
-    */
 
     pid = fork();
     if (pid == 0) 
@@ -829,19 +808,20 @@ int shell_cd(char **args)
     return 1;
 }
 
-int shell_help(char **args)
+int execute_help(char **args)
 {
-    printf("Shell help!\n");
-    printf("The builtin commands are: \n");
+    fprintf(stdout,"SHELL HELP\nThis is a SHELL designed as a part of assignment 2 of OS Lab.\n");
+    fprintf(stdout,"The builtin commands are: \n");
     for (int i = 0; i<shell_num_builtins(); i++)
     {
-        printf(" %s\n", built_in[i]);
+        fprintf(stdout," %s\n", built_in[i]);
     }
-
-    printf("Use the man command for knowing about other commands!");
+    fprintf(stdout," multiWatch\n");
+    fprintf(stdout,"Use the man command for knowing about other linux kernal cammands!\n");
+    return 1;
 }
 
-int shell_exit(char **args)
+int execute_exit(char **args)
 {
     return 0;
 }
