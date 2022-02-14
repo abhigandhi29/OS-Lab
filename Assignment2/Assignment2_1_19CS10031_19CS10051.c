@@ -3,7 +3,7 @@
  * Assignment 2
  * Use of Syscall
  * Abhishek Gandhi - 19CS10031
- * Sajal Chammuniya - 19CS10051
+ * Sajal Chhamunya - 19CS10051
  ********************/
 
 #include <sys/wait.h>
@@ -386,6 +386,9 @@ int main(int argc, char **argv)
     init_history();
     signal(SIGTSTP, SIG_IGN);   // ignore ctrl-c and ctrl-z
     signal(SIGINT, SIG_IGN);
+    printf("\033[0;31m");
+    printf("SHELL BY GROUP 1\n-------------------------\n");
+    printf("\033[0m");
     shell_loop();    // sheel loop for continuously taking input
     update_history();    // store history in a file
     // shutdown actions
@@ -403,9 +406,15 @@ void shell_loop()
     int position, pipe_size;
     line = (char *)(malloc(line_size * sizeof(char)));
     temp = (char *)(malloc(line_size * sizeof(char)));  // temp and line array 
+
+    char dir_name[100];
     while(status)
     {
+        printf("\033[1;32m");
+        printf("\n%s:\n",getcwd(dir_name,100));
+        printf("\033[1;36m");
         printf("--> ");
+        printf("\033[0m");
         line = shell_read_line();
         if(line[0] == '\0'){
             continue;
@@ -577,6 +586,7 @@ char* shell_read_line()
                     printf("%d) %s\n",i+1,file_name[i]);
                 }
                 int filename_input_num;
+                printf("\nEnter the Corresponding number: ");
                 scanf("%d",&filename_input_num);
                 filename_input_num--;
                 if(filename_input_num<0||filename_input_num>file_count){
@@ -831,6 +841,9 @@ int execute_help(char **args)
 
 int execute_exit(char **args)
 {
+    printf("\033[0;31m");
+    printf("\n\nEXITING SHELL\n");
+    printf("\033[0m");
     return 0;
 }
 
