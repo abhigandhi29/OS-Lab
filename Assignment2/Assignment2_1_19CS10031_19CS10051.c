@@ -9,7 +9,7 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include<fcntl.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -256,6 +256,7 @@ void multiWatch_ctrl_c(){
     while(status==0){
         char * str = malloc(sizeof(char)*BUF_LEN);
         sprintf(str,".temp.PID%d.txt",i);
+        i++;
         status = remove(str);
     }
 }
