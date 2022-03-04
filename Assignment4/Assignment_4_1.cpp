@@ -15,6 +15,7 @@
 
 using namespace std;
 
+
 struct job {
     int id;
     int timeOfCompletion;
@@ -29,6 +30,49 @@ struct Node {
     Node *child;
 };
 
+int producer(){
+    return 0;
+}
+
+int consumer(int y){
+    return 0;
+}
+
 int main(){
+    int P,C;
+    cout<<"Enter number of Producer: ";
+    cin>>P;
+    cout<<"Enter number of Consumer: ";
+    cin>>C;
+
+    for(int i = 0; i < P; i++){
+        int pid = fork();
+        if(pid<0){
+            printf("Error in creating producer process. Exitting..\n");
+			exit(1);
+        }
+        else if(pid==0){
+            producer();
+            exit(0);
+        }
+        else{
+            continue;
+        }
+    }
+
+    //for(int i = 0; i < C; i++){
+    int pid = fork();
+    if(pid<0){
+        printf("Error in creating producer process. Exitting..\n");
+        exit(1);
+    }
+    else if(pid==0){
+        consumer(C);
+        exit(0);
+    }
+        
+
+    //}
+
     return 0;
 }
