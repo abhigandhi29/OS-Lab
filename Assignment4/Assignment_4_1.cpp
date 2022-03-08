@@ -193,7 +193,9 @@ void* consumerProcess(void* T){
     while(1){
         cout<<"Size = "<<Tr->size<<" "<<Tr->status<<" "<<Tr->node[0].status<<endl;
         if(Tr->status==1 && Tr->size==0)
-            pthread_exit(0);     
+            pthread_exit(0);   
+        if(Tr->node[0].status==2)
+            pthread_exit(0);  
             //return 0;
         if(Tr->size==0)
             continue;
@@ -345,10 +347,15 @@ int main(){
     // }
     sleep(20);
     tree->status = 1;
+    for(int i=0;i<P;i++){
+        pthread_kill(mythreads[i],SIGKILL);
+    }
     //wait(NULL);
     //else{
     //    producer();
     //}
+    //exit(0);
+    //kill(pid,SIGKILL);
         
 
     //}
