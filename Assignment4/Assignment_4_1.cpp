@@ -72,11 +72,11 @@ int findRandom(Tree *tree, int idx,double prob){
 int getFirstChild(Tree* T, int ind){
     Node *N = T->node;
     if(N[ind].status!=0){
-        cout<<ind<<" "<<N[ind].status<<endl;
+        // cout<<ind<<" "<<N[ind].status<<endl;
         return -1;
     }
     else if(N[ind].depend_cnt==0){
-        cout<<"here "<<ind<<endl;
+        // cout<<"here "<<ind<<endl;
         if(T->status==0 && ind==0)
             return -1;
         return ind;
@@ -119,7 +119,7 @@ int makeChild(Tree *Tr,int idx,int parent){
         exit(1);
     }
     //pthread_mutex_lock(&Tr->print_mutex);
-    cout<<"New Job Created, Job id: "<<n[idx].j.id<<" "<<" with index: "<<idx<<" and with parent idx: "<<parent<<endl;
+    cout<<"New Job Created, Job id: "<<n[idx].j.id<<" "<<" with index: "<<idx<<" and with parent index: "<<parent<<endl;
     //pthread_mutex_unlock(&Tr->print_mutex);
     return 0;
 }
@@ -128,12 +128,14 @@ void *producer(void* p){
     ProducerData *producer = (ProducerData *)p;
     int t = producer->runTime;
     //time_point<system_clock> start, end;
-  
+    
+    cout<<"End time for this thread: "<<t<<"ms"<<endl;
+
     auto start = high_resolution_clock::now();
     double elapsed_time_ms = duration<double, std::milli>(high_resolution_clock::now()-start).count();
     while(elapsed_time_ms < t){
         usleep(rand()%(300000)+200000);
-        cout<<"T = "<<t<<" "<<elapsed_time_ms<<endl;
+        cout<<"Time Spent idle before next Job produced: "<<elapsed_time_ms<<endl;
         
         if(producer->tree->size==0){
             pthread_mutex_lock(&producer->tree->mutex);
@@ -157,19 +159,19 @@ void *producer(void* p){
             //     break;
             // }
             elapsed_time_ms = duration<double, std::milli>(high_resolution_clock::now()-start).count();
-            cout<<"--------------------------------"<<endl;
+            // cout<<"--------------------------------"<<endl;
         }
         if(elapsed_time_ms>=t) break;
-        cout<<"here1"<<" "<<idx<<endl;
+        // cout<<"here1"<<" "<<idx<<endl;
         pthread_mutex_lock(&producer->tree->node[idx].mutex);
-        cout<<"here2"<<endl;
+        // cout<<"here2"<<endl;
         if(producer->tree->node[idx].status != notScheduled || producer->tree->node[idx].depend_cnt>=MAX_CHILD){
-            cout<<"here3"<<endl;
+            // cout<<"here3"<<endl;
             pthread_mutex_unlock(&producer->tree->node[idx].mutex);
             elapsed_time_ms = duration<double, std::milli>(high_resolution_clock::now()-start).count();
             continue;
         }
-        cout<<"here4"<<endl;
+        // cout<<"here4"<<endl;
         pthread_mutex_lock(&producer->tree->mutex);
         int idn = producer->tree->currIdx++;
         pthread_mutex_unlock(&producer->tree->mutex);
@@ -177,11 +179,11 @@ void *producer(void* p){
         producer->tree->size++;
         pthread_mutex_unlock(&producer->tree->node[idx].mutex);
         
-        cout<<"here5"<<endl;
+        // cout<<"here5"<<endl;
         elapsed_time_ms = duration<double, std::milli>(high_resolution_clock::now()-start).count();
         
     }
-    cout<<"terminated"<<endl;
+    // cout<<"terminated"<<endl;
     pthread_exit(0); 
     //return 0;
 }
@@ -191,7 +193,7 @@ void* consumerProcess(void* T){
     Tree * Tr=(Tree *)T;
     Node* arr=Tr->node;
     while(1){
-        cout<<"Size = "<<Tr->size<<" "<<Tr->status<<" "<<Tr->node[0].status<<endl;
+        // cout<<"Size = "<<Tr->size<<" "<<Tr->status<<" "<<Tr->node[0].status<<endl;
         if(Tr->status==1 && Tr->size==0)
             pthread_exit(0);   
         if(Tr->node[0].status==2)
@@ -208,7 +210,7 @@ void* consumerProcess(void* T){
             continue;
             //return 0;
         }
-        cout<<"consumer "<<ind<<endl;
+        // cout<<"consumer "<<ind<<endl;
         pthread_mutex_lock(&Tr->node[ind].mutex);
         if(Tr->node[ind].depend_cnt!=0 || Tr->node[ind].status!=notScheduled){
             pthread_mutex_unlock(&Tr->node[ind].mutex);
@@ -238,7 +240,7 @@ void* consumerProcess(void* T){
         cout<<"Completion of Job, Job id: "<<arr[ind].j.id<<endl;
         //pthread_mutex_unlock(&Tr->print_mutex);
         pthread_mutex_unlock(&Tr->node[ind].mutex);
-        cout<<"end consumer"<<endl;
+        // cout<<"end consumer"<<endl;
     }
     return 0;
 }
@@ -256,7 +258,7 @@ int consumer(Tree* T,int y){
     for(int i=0;i<y;i++){
         pthread_join(mythreads[i],NULL);
     }
-    cout<<"consumer ending"<<endl;
+    cout<<"Consumer jobs finished"<<endl;
     return 0;
 }
 
@@ -266,9 +268,9 @@ int consumer(Tree* T,int y){
 
 int main(){
     int P,C;
-    cout<<"Enter number of Producer: ";
+    cout<<"Enter number of Producer (P): ";
     cin>>P;
-    cout<<"Enter number of Consumer: ";
+    cout<<"Enter number of Consumer (y): ";
     cin>>C;
 
     srand(time(0));
@@ -334,7 +336,7 @@ int main(){
 
     int pid = fork();
     if(pid<0){
-        printf("Error in creating producer process. Exitting..\n");
+        printf("Error in creating producer process. Exiting..\n");
         exit(1);
     }
     else if(pid==0){
@@ -348,9 +350,10 @@ int main(){
     sleep(20);
     tree->status = 1;
     for(int i=0;i<P;i++){
-        pthread_kill(mythreads[i],SIGKILL);
+        pthread_kill(mythreads[i],SIGINT);
     }
-    //wait(NULL);
+    cout<<"Producer threads completed"<<endl;
+    wait(NULL);
     //else{
     //    producer();
     //}
