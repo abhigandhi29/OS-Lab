@@ -12,24 +12,15 @@ void randArr(Ptr x, Ptr y) {
         Ptr p1 = createVar(Type::INT);
         assignVar(p1, r);
         getVar(p1, r);
-        //freeElem(p1);
         char c = 'a' + r;
-        // Ptr p2 = createVar(Type::CHAR);
-        // assignVar(p2, c);
-        // getVar(p2, &c);
-        
         assignArr(arr, i, c);
-        stopScope();
-        // gcActivate();
+        endScope();
     }
-    // debugPrint();
-    // sleep(1);
     freeElem(arr);
-    //gcActivate();
 }
 
 int main() {
-    createMem(250 * 1024 * 1024);  // 250MB
+    createMem(250 * 1024 * 1024 /4);  // 250MB
     for (int i = 0; i < 10; i++) {
         cout << "called for " << i << endl;
         startScope();
@@ -37,7 +28,7 @@ int main() {
         Ptr y = createVar(Type::CHAR);
         randArr(x, y);
         cout << "done" << i << endl;
-        stopScope();
+        endScope();
         usleep(50 * 1000);
     }
     freeMem();

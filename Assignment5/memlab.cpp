@@ -6,7 +6,7 @@ symbolTable* symTable;
 markArray *mark;
 
 mem::mem(int size):size(size){
-    memBase = (int *)malloc(4*size);
+    memBase = (int *)malloc(size*4);
     int temp = size<<1;
     *memBase = temp;
     int sem_job = pthread_mutex_init(&(mutex),NULL);
@@ -40,7 +40,7 @@ int getSize(Type type) {
 }
 pthread_t mythread;
 void createMem(int size){
-    cout<<"Allocating intial memory"<<endl;
+    //cout<<"Allocating intial memory"<<endl;
     memPtr = new mem(size); // total size allocated is 4*size
     symTable = new symbolTable();
     pthread_attr_t attr; // will store attributes of the thread (e.g., stack size)
@@ -50,46 +50,43 @@ void createMem(int size){
 }
 
 Ptr createVar(Type varType){
-    cout<<"Assigning memory for a variable"<<endl;
-    int idx  = 0;
+    //cout<<"Assigning memory for a variable"<<endl;
+    //int idx  = 0;
     int sizeRequired = 4;
     int *alpha = (memPtr->memBase);
     int temp = 0;
     pthread_mutex_lock(&memPtr->mutex);
     while(temp<memPtr->size){
-        //cout<<temp<<endl;
         if((*(alpha+temp))%2==0 && ((*(alpha+temp))>>1)-1>=sizeRequired/4){
+            //cout<<"Adding new variable in symbol table at idx: "<<symTable->idx<<endl;
             symTable->stacks[symTable->idx].offset = temp+1;
+            symTable->stacks[symTable->idx].status = 0;
             Ptr p(symTable->idx++,varType);
-            //cout<<(((*(alpha+temp))>>1)-2)<<endl;
+
             if(((*(alpha+temp))>>1)-2-sizeRequired/4>0){
-                cout<<"creating one more block in memory"<<endl;
                 (*(alpha+temp+1+sizeRequired/4)) = (((*(alpha+temp))>>1)-1-sizeRequired/4)<<1;
             }
             *(alpha+temp) = ((1+sizeRequired/4)<<1) + 1;
             pthread_mutex_unlock(&memPtr->mutex);
-            cout<<"Free location found"<<endl;
+            //cout<<"Free location found"<<endl;
             return p;
         }
         temp += ((*(alpha+temp))>>1);
 
     }
     pthread_mutex_unlock(&memPtr->mutex);
-    cout<<"No big free space available"<<endl;
+    cout<<"No free space available with size greater than required size"<<endl;
     exit(1);
-    // Ptr p(-1,varType);
-    // return p; 
+    
 }
 
 void assignVar(Ptr &p,int val){
-    //cout<<"here"<<p.type<<endl;
+    
     if(p.type!=INT && p.type!=MEDIUM_INT)
         throw "Invalid type";
-    //cout<<"here"<<endl;
+    
     int *alpha = (memPtr->memBase);
-    //cout<<"here"<<endl;
-    //pthread_mutex_lock(&memPtr->mutex);
-    cout<<"Assigning variable in allocated memory"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     *(alpha+symTable->stacks[p.idx].offset) = val;
     //pthread_mutex_unlock(&memPtr->mutex);
 }
@@ -98,57 +95,44 @@ void assignVar(Ptr &p,bool val){
     if(p.type!=BOOLEAN)
         throw "Invalid type";
     int *alpha = (memPtr->memBase);
-    //pthread_mutex_lock(&memPtr->mutex);
-    cout<<"Assigning variable in allocated memory"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     *(alpha+symTable->stacks[p.idx].offset) = val;
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 void assignVar(Ptr &p,char val){
     if(p.type!=CHAR)
         throw "Invalid type";
     int *alpha = (memPtr->memBase);
-    //pthread_mutex_unlock(&memPtr->mutex);
-    cout<<"Assigning variable in allocated memory"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     *(alpha+symTable->stacks[p.idx].offset) = val;
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 void getVar(Ptr &p,int &val){
-    //cout<<"here"<<p.type<<endl;
     if(p.type!=INT && p.type!=MEDIUM_INT)
         throw "Invalid type";
-   // cout<<"here"<<endl;
     int *alpha = (memPtr->memBase);
-    //cout<<"here"<<endl;
-    //pthread_mutex_lock(&memPtr->mutex);
-    cout<<"Extracting a variable value from memory"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     val = *(alpha+symTable->stacks[p.idx].offset);
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 void getVar(Ptr &p,bool& val){
     if(p.type!=BOOLEAN)
         throw "Invalid type";
     int *alpha = (memPtr->memBase);
-    //pthread_mutex_lock(&memPtr->mutex);
-    cout<<"Extracting a variable value from memory"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     val = *(alpha+symTable->stacks[p.idx].offset);
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 void getVar(Ptr &p,char& val){
     if(p.type!=CHAR)
         throw "Invalid type";
     int *alpha = (memPtr->memBase);
-    //pthread_mutex_unlock(&memPtr->mutex);
-    cout<<"Extracting a variable value from memory"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     val = *(alpha+symTable->stacks[p.idx].offset);
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 Ptr createArr(int size, Type varType){
-    cout<<"Assigning memory for a array"<<endl;
+    //cout<<"Assigning memory for a array"<<endl;
     int sizeRequired = size*getSize(varType);
     if(sizeRequired%4){
         sizeRequired = (sizeRequired/4)*4+4;
@@ -158,29 +142,30 @@ Ptr createArr(int size, Type varType){
     pthread_mutex_lock(&memPtr->mutex);
     while(temp<memPtr->size){
         if((*(alpha+temp))%2==0 && ((*(alpha+temp))>>1)-1>=sizeRequired/4){
+            //cout<<"Adding new variable in symbol table at idx: "<<symTable->idx<<endl;
             symTable->stacks[symTable->idx].offset = temp+1;
+            symTable->stacks[symTable->idx].status = 0;
             Ptr p(symTable->idx++,varType,sizeRequired,1,size);
             if(((*(alpha+temp))>>1)-2-sizeRequired/4>0){
                 (*(alpha+temp+sizeRequired/4+1)) = (((*(alpha+temp))>>1)-1-sizeRequired/4)<<1;
             }
             *(alpha+temp) = ((1+sizeRequired/4)<<1)+1;
             pthread_mutex_unlock(&memPtr->mutex);
-            cout<<"Free location found"<<endl;
+            //cout<<"Free location found"<<endl;
             return p;
         }
         temp += ((*(alpha+temp))>>1);
     }
     pthread_mutex_unlock(&memPtr->mutex);
-    cout<<"No big free space available"<<endl;
+    cout<<"No free space available with size greater than required size"<<endl;
     exit(1);
 }
 
 void assignArr(Ptr &p,int a[],int n){
     if(p.type!=INT && p.type!=MEDIUM_INT)
         throw "Invalid type";
-    //pthread_mutex_lock(&memPtr->mutex);
     int *alpha = (memPtr->memBase + symTable->stacks[p.idx].offset);
-    cout<<"Assigning array elements"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     for(int i=0;i<n;i++){
         *alpha = a[i];
         alpha++;
@@ -190,33 +175,28 @@ void assignArr(Ptr &p,int a[],int n){
 void assignArr(Ptr &p,char a[],int n){
     if(p.type!=CHAR)
         throw "Invalid type";
-    //pthread_mutex_lock(&memPtr->mutex);
     char *alpha = (char *)(memPtr->memBase + symTable->stacks[p.idx].offset);
-    cout<<"Assigning array elements"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     for(int i=0;i<n;i++){
         *alpha = a[i];
         alpha++;
     }
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 void assignArr(Ptr &p,bool a[],int n){
     if(p.type!=BOOLEAN)
         throw "Invalid type";
-    //pthread_mutex_lock(&memPtr->mutex);
     bool *alpha =(bool *)(memPtr->memBase + symTable->stacks[p.idx].offset);
-    cout<<"Assigning array elements"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     for(int i=0;i<n;i++){
         *alpha = a[i];
         alpha++;
     }
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 void assignArr(Ptr &p,int idx,int val){
-    if(p.type!=INT || p.type!=MEDIUM_INT)
+    if(p.type!=INT && p.type!=MEDIUM_INT)
         throw "Invalid type";
-    //pthread_mutex_lock(&memPtr->mutex);
-    cout<<"Assigning array elements"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     int *alpha = (memPtr->memBase + symTable->stacks[p.idx].offset);
     alpha +=idx;
     *alpha = val;
@@ -226,41 +206,39 @@ void assignArr(Ptr &p,int idx,int val){
 void assignArr(Ptr &p,int idx,char val){
     if(p.type!=CHAR)
         throw "Invalid type";
-    //pthread_mutex_lock(&memPtr->mutex);
-    cout<<"Assigning array elements"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     char *alpha = (char *)(memPtr->memBase + symTable->stacks[p.idx].offset);
     alpha +=idx;
     *alpha = val;
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 void assignArr(Ptr &p,int idx,bool val){
     if(p.type!=BOOLEAN)
         throw "Invalid type";
-    //pthread_mutex_lock(&memPtr->mutex);
-    cout<<"Assigning array elements"<<endl;
+    //cout<<"Assigning variable at logical address: "<<p.idx<<endl;
     bool *alpha =(bool *)(memPtr->memBase + symTable->stacks[p.idx].offset);
     alpha +=idx;
     *alpha = val;
-    //pthread_mutex_unlock(&memPtr->mutex);
 }
 
 
 void freeElem(Ptr &p){
-    cout<<"freeing memory with stack idx: "<<p.idx<<endl;
+    //cout<<"freeing memory with stack idx: "<<p.idx<<endl;
     int *alpha = memPtr->memBase + symTable->stacks[p.idx].offset;
     alpha--;
     *alpha = ((*alpha)>>1)<<1;    
+    symTable->stacks[p.idx].status = 1;
+
 }
 void freeElem(int physical_offset){
-    cout<<"freeing memory with physical_offset: "<<physical_offset<<endl;
+    //cout<<"freeing memory with physical_offset: "<<physical_offset<<endl;
     int *alpha = memPtr->memBase + physical_offset;
     alpha--;
     *alpha = ((*alpha)>>1)<<1;
 }
 
 void freeMem(){
-    cout<<"Terminating the program"<<endl;
+    //cout<<"Terminating the program"<<endl;
     pthread_kill(mythread,SIGINT);
     free(memPtr);
     free(symTable);
@@ -268,44 +246,45 @@ void freeMem(){
 }
 
 void startScope(){
+    //cout<<"new scope started"<<endl;
     symTable->stacks[symTable->idx++].offset = -1;
 }
 
-void stopScope(){
+void endScope(){
+    //cout<<"end scope, empty the stack till -1 and mark them"<<endl;
     for(int i = symTable->idx-1;i>=0;i--){
         if(symTable->stacks[i].offset == -1){
             symTable->idx = i;
             break;
         }
         pthread_mutex_lock(&mark->mutex);
-        mark->arr[mark->idx++] = symTable->stacks[i].offset;
+        if(symTable->stacks[i].status==0){
+            mark->arr[mark->idx++] = symTable->stacks[i].offset;
+        }
         pthread_mutex_unlock(&mark->mutex);
     }
 }
 
 void gc_initialize(){
+    //cout<<"initializing garbageCollector"<<endl;
     mark = new markArray();
 }
 void gc_run(){
     bool compress = false;
     pthread_mutex_lock(&mark->mutex);
-    //cout<<"here"<<endl;
+    
     if(mark->idx!=0){
+        //cout<<"Remove marked elements"<<endl;
         compress = true;
-        //pthread_mutex_lock(&memPtr->mutex);
         for(int i=mark->idx-1;i>=0;i--)
             freeElem(mark->arr[i]);  
         mark->idx = 0;
-        //pthread_mutex_unlock(&memPtr->mutex);
     }
-    //cout<<"heter"<<endl;
     pthread_mutex_unlock(&mark->mutex);
 
     if(compress){
-        //cout<<"heter"<<endl;
+        //cout<<"Iterating through memory and compressing it"<<endl;
         pthread_mutex_lock(&memPtr->mutex);
-        // TODO
-        // merge multiple empty blocks together
         int temp = 0;
         int *alpha = (memPtr->memBase);
         bool update = false;
@@ -327,7 +306,6 @@ void gc_run(){
         }
         pthread_mutex_unlock(&memPtr->mutex);
     }
-    //cout<<"here"<<endl;
 }
 
 void *garbageCollector(void *){

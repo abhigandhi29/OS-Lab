@@ -10,7 +10,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <pthread.h>
-#define MAX_SYMBOL_TABLE_SIZE 100
+#define MAX_SYMBOL_TABLE_SIZE 1000
 
 
 enum Type {
@@ -31,6 +31,7 @@ extern mem *memPtr;
 
 struct symbol{
     int offset;
+    int status = 0;
 };
 
 struct markArray{
@@ -85,7 +86,7 @@ void *garbageCollector(void *);
 void gc_initialize();
 void gc_run();
 void startScope();
-void stopScope();
+void endScope();
 void freeMem();
 
 
