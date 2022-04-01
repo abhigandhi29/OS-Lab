@@ -347,7 +347,7 @@ void gc_run(){
 }
 
 void *garbageCollector(void *){
-    gc_initialize();
+    //gc_initialize();
     while(1){
         gc_run();
         usleep(1000*GC_SLEEP_TIME_MS);
