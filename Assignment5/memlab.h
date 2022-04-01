@@ -1,3 +1,8 @@
+//Group 1
+//OS Assignment 5
+//19CS10031 - Gandhi Abhishek Rajesh
+//19CS10051 - Sajal Chhamunya
+
 #ifndef MEM_LAB_H
 #define MEM_LAB_H
 
@@ -10,7 +15,11 @@
 #include <fcntl.h>
 #include <iostream>
 #include <pthread.h>
+#include <string>
 #define MAX_SYMBOL_TABLE_SIZE 1000
+#define GC_SLEEP_TIME_MS 50
+#define AVERAGE_FREE_BLOCK_SIZE 100000
+using namespace std;
 
 
 enum Type {
@@ -24,6 +33,8 @@ int getSize(Type type);
 struct mem{
     int *memBase;
     int size;
+    int freeSize;
+    int numBlocks;
     pthread_mutex_t mutex;
     mem(int size);
 };
@@ -31,7 +42,7 @@ extern mem *memPtr;
 
 struct symbol{
     int offset;
-    int status = 0;
+    bool status = 0;
 };
 
 struct markArray{
@@ -88,6 +99,8 @@ void gc_run();
 void startScope();
 void endScope();
 void freeMem();
+string getVarS(Type type);
+void compactMem();
 
 
 
